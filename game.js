@@ -265,11 +265,13 @@
     }
 
     // --- floating drone hazards in the air, once things heat up ---
-    if (d > 1.0 && Math.random() < 0.22) {
-      const dy = rand(H * 0.46, H * 0.72);
+    // appear only after a grace period, spaced out, with predictable paths
+    if (d > 0.8 && Math.random() < 0.16) {
+      const dy = rand(H * 0.5, H * 0.7);
       drones.push({
-        x: nextAnchorX + rand(40, 120), y: dy, baseY: dy,
-        t: Math.random() * 6.28, amp: rand(24, 70), spd: rand(1, 2.4),
+        x: nextAnchorX + rand(70, 150), y: dy, baseY: dy,
+        t: Math.random() * 6.28, amp: rand(20, 50), spd: rand(0.8, 1.6),
+        r: 19, dodged: false,
       });
     }
 
@@ -409,8 +411,8 @@
 
   function step(dt) {
     game.t += dt;
-    difficulty = game.t / 30;        // ramps over time (gentler now)
-    game.speed = 60 + difficulty * 12;
+    difficulty = game.t / 38;        // ramps over time (gentler still)
+    game.speed = 60 + difficulty * 10;
 
     // holding the screen continuously seeks the next anchor, so a swing
     // chains the instant a reachable anchor appears — no pixel-perfect tap
@@ -462,9 +464,9 @@
     } else {
       // free flight: hold a forward cruise so momentum never collapses into a
       // vertical drop — you always sail on toward the next anchor
-      const cruise = (195 + difficulty * 13) * feel.cruise;
+      const cruise = (175 + difficulty * 10) * feel.cruise;
       if (player.vx < cruise) player.vx += (cruise - player.vx) * 1.3 * dt;
-      if (player.vx < 120) player.vx = 120;
+      if (player.vx < 115) player.vx = 115;
     }
 
     player.x += player.vx * dt;
@@ -554,12 +556,21 @@
       }
     }
 
-    // drones
+    // drones — fair circular hitbox, plus a reward for a clean near-miss
     for (const dr of drones) {
       dr.t += dt * dr.spd;
       dr.y = dr.baseY + Math.sin(dr.t) * dr.amp;
-      if (Math.abs(dr.x - player.x) < 22 && Math.abs(dr.y - player.y) < 22) {
-        return die('SWATTED');
+      const ddx = dr.x - player.x, ddy = dr.y - player.y;
+      const d2 = ddx * ddx + ddy * ddy;
+      const hit = player.r + dr.r * 0.7;
+      if (d2 < hit * hit) return die('SWATTED');
+      // skim past it and survive → bonus
+      if (!dr.dodged && dr.x < player.x && d2 < 95 * 95) {
+        dr.dodged = true;
+        const b = 5 * (1 + Math.floor(chainSwings / 2));
+        centsEarned += b;
+        floatText(player.x, player.y - 26, 'DODGE! +' + b + '¢', '#ff7b8c');
+        Audio.coin(8); vibrate(8); burst(dr.x, dr.y, '#ff7b8c', 6); updateHud();
       }
     }
 
@@ -664,6 +675,9 @@
     drawFloaters();
 
     ctx.restore();
+
+    // off-screen drone warnings (screen space)
+    if (game.state === 'playing') drawWarnings();
 
     // hit flash
     if (game.flash > 0.01) {
@@ -806,22 +820,64 @@
 
   function drawDrones() {
     for (const dr of drones) {
-      if (dr.x < game.camX - 40 || dr.x > game.camX + W + 40) continue;
+      if (dr.x < game.camX - 50 || dr.x > game.camX + W + 50) continue;
+      const pulse = 0.5 + 0.5 * Math.sin(game.t * 6 + dr.x);
       ctx.save();
       ctx.translate(dr.x, dr.y);
-      ctx.fillStyle = '#ff5d73';
-      ctx.globalAlpha = 0.25;
-      ctx.beginPath(); ctx.arc(0, 0, 16, 0, 7); ctx.fill();
+      // big danger aura
+      ctx.fillStyle = '#ff3355';
+      ctx.globalAlpha = 0.18 + pulse * 0.22;
+      ctx.beginPath(); ctx.arc(0, 0, dr.r + 12 + pulse * 6, 0, 7); ctx.fill();
+      // pulsing warning ring
+      ctx.globalAlpha = 0.5 + pulse * 0.4;
+      ctx.strokeStyle = '#ff5d73';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(0, 0, dr.r + 4, 0, 7); ctx.stroke();
       ctx.globalAlpha = 1;
-      ctx.fillStyle = '#ff7b8c';
-      roundRectPath(-12, -5, 24, 10, 4); ctx.fill();
+      // body
+      ctx.shadowColor = '#ff3355'; ctx.shadowBlur = 14;
+      ctx.fillStyle = '#ff6076';
+      ctx.beginPath(); ctx.arc(0, 0, dr.r, 0, 7); ctx.fill();
+      ctx.shadowBlur = 0;
+      // angry eye
       ctx.fillStyle = '#2a0c12';
-      ctx.beginPath(); ctx.arc(0, 0, 3, 0, 7); ctx.fill();
-      // rotor blur
-      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(-14, -6); ctx.lineTo(-4, -8);
-      ctx.moveTo(14, -6); ctx.lineTo(4, -8); ctx.stroke();
+      ctx.beginPath(); ctx.arc(0, 0, dr.r * 0.5, 0, 7); ctx.fill();
+      ctx.fillStyle = '#ffd23f';
+      ctx.beginPath(); ctx.arc(0, 0, dr.r * 0.22, 0, 7); ctx.fill();
+      // spikes so it reads as a hazard
+      ctx.strokeStyle = '#ff8a98'; ctx.lineWidth = 3;
+      for (let k = 0; k < 8; k++) {
+        const an = (k / 8) * Math.PI * 2 + game.t;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(an) * dr.r, Math.sin(an) * dr.r);
+        ctx.lineTo(Math.cos(an) * (dr.r + 6), Math.sin(an) * (dr.r + 6));
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+  }
+
+  // edge warnings for drones that are ahead but not yet on screen
+  function drawWarnings() {
+    const edgeX = W - 26;
+    for (const dr of drones) {
+      const sx = dr.x - game.camX;
+      if (sx <= W + 30 || sx > W + W * 0.9) continue;   // only just-ahead ones
+      const sy = clamp(dr.y - game.camY, 50, H - 50);
+      const pulse = 0.5 + 0.5 * Math.sin(game.t * 8);
+      ctx.save();
+      ctx.globalAlpha = 0.5 + pulse * 0.5;
+      ctx.fillStyle = '#ff3355';
+      // triangle pointing right
+      ctx.beginPath();
+      ctx.moveTo(edgeX + 12, sy);
+      ctx.lineTo(edgeX - 8, sy - 12);
+      ctx.lineTo(edgeX - 8, sy + 12);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 14px sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('!', edgeX - 1, sy);
       ctx.restore();
     }
   }
