@@ -1,5 +1,5 @@
 /* HOOKED service worker — offline-first cache so the game is playable anywhere. */
-const CACHE = 'hooked-v2';
+const CACHE = 'hooked-v3';
 const ASSETS = [
   './',
   './index.html',

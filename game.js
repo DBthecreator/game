@@ -181,83 +181,72 @@
     genX = 0; lastPlatformEnd = 0; nextAnchorX = 0;
     comboCount = 0; chainSwings = 0; bestChain = 0; centsEarned = 0; distanceM = 0;
 
-    // starting platform
-    platforms.push({ x0: -200, x1: 260, y: groundY() });
-    lastPlatformEnd = 260;
-
-    player.x = 90;
-    player.y = groundY() - player.r;
-    player.vx = game.speed;
+    // start airborne, drifting forward over the water
+    player.x = 110;
+    player.y = groundY() - H * 0.45;
+    player.vx = 220;
     player.vy = 0;
     player.anchor = null;
     player.ropeLen = 0;
-    player.grounded = true;
+    player.grounded = false;
     player.trail = [];
     player.rot = 0;
+    player.spin = 0;
+    player.flipAccum = 0;
+    player.flips = 0;
     player.alive = true;
 
     initStars();
     // pre-generate world to the right
     while (genX < player.x + W * 2) generateChunk();
 
-    // guarantee a friendly, in-reach anchor right above the start so the
-    // very first hold always hooks — no frustrating empty grab
-    anchors.unshift({ x: player.x + 150, y: groundY() - H * 0.36, id: -1, pulse: 0 });
-    cents.push({ x: player.x + 150, y: groundY() - H * 0.18, taken: false, bob: 0 });
+    // begin already hooked & swinging on a friendly anchor, so the player
+    // is in the air from frame one and can't faceplant before learning
+    const a0 = { x: player.x + 120, y: groundY() - H * 0.66, id: -1, pulse: 1 };
+    anchors.unshift(a0);
+    player.anchor = a0;
+    player.ropeLen = Math.hypot(a0.x - player.x, a0.y - player.y);
   }
 
   // Procedurally extend the world to the right.
   function generateChunk() {
     const d = difficulty;
-    const gY = groundY();
 
     // --- anchors: a flowing line of grapple points across the sky ---
-    const anchorGap = rand(150, 210) - Math.min(40, d * 4);
-    nextAnchorX = (nextAnchorX || genX) + Math.max(110, anchorGap);
-    const skyTop = H * 0.26, skyBottom = H * 0.5;
+    const anchorGap = rand(150, 215) - Math.min(40, d * 4);
+    nextAnchorX = (nextAnchorX || genX) + Math.max(120, anchorGap);
+    const skyTop = H * 0.2, skyBottom = H * 0.5;
     const ay = clamp(
-      (anchors.length ? anchors[anchors.length - 1].y : H * 0.3) + rand(-90, 90),
+      (anchors.length ? anchors[anchors.length - 1].y : H * 0.32) + rand(-100, 100),
       skyTop, skyBottom
     );
     anchors.push({ x: nextAnchorX, y: ay, id: nextAnchorX | 0, pulse: 0 });
 
-    // cents arcing under/near the anchor line — reward good swings
+    // cents arcing below the anchor — reward dipping low on a swing
     if (Math.random() < 0.85) {
       const n = 3 + (Math.random() < 0.4 ? 2 : 0);
       const baseX = nextAnchorX - rand(20, 80);
-      const baseY = ay + rand(60, 150);
+      const baseY = ay + rand(80, 190);
       for (let i = 0; i < n; i++) {
         const ph = (i / (n - 1) - 0.5);
         cents.push({
           x: baseX + ph * 90,
-          y: baseY - Math.cos(ph * Math.PI) * 46,
+          y: baseY - Math.cos(ph * Math.PI) * 50,
           taken: false, bob: Math.random() * 6.28,
         });
       }
     }
 
-    // --- ground platforms with deadly gaps (widen with difficulty) ---
-    if (genX >= lastPlatformEnd - 40) {
-      const gap = rand(120, 200) + d * 14;
-      const len = rand(180, 360);
-      const x0 = lastPlatformEnd + gap;
-      const x1 = x0 + len;
-      platforms.push({ x0, x1, y: gY });
-      lastPlatformEnd = x1;
-
-      // occasional drone hazard hovering over a gap, once it gets going
-      if (d > 1.2 && Math.random() < 0.4) {
-        drones.push({
-          x: x0 - gap * 0.5,
-          y: rand(H * 0.4, gY - 60),
-          baseY: 0, t: Math.random() * 6.28,
-          amp: rand(20, 60), spd: rand(1, 2.2),
-        });
-        drones[drones.length - 1].baseY = drones[drones.length - 1].y;
-      }
+    // --- floating drone hazards in the air, once things heat up ---
+    if (d > 1.0 && Math.random() < 0.22) {
+      const dy = rand(H * 0.46, H * 0.72);
+      drones.push({
+        x: nextAnchorX + rand(40, 120), y: dy, baseY: dy,
+        t: Math.random() * 6.28, amp: rand(24, 70), spd: rand(1, 2.4),
+      });
     }
 
-    genX = Math.max(nextAnchorX, lastPlatformEnd) + 80;
+    genX = nextAnchorX + 80;
   }
 
   function cullBehind() {
@@ -299,6 +288,8 @@
     player.ropeLen = Math.hypot(a.x - player.x, a.y - player.y);
     a.pulse = 1;
     player.grounded = false;
+    player.spin = 0;
+    player.flipAccum = 0;
     chainSwings++;
     Audio.grab();
     vibrate(8);
@@ -311,7 +302,23 @@
       Audio.release();
       // tiny release boost so flings feel snappy
       player.vx *= 1.02;
+      // fling off into a somersault — faster release, faster spin
+      const sp = Math.hypot(player.vx, player.vy);
+      player.spin = (player.vx >= 0 ? 1 : -1) * clamp(4 + sp / 90, 5, 16);
+      player.flipAccum = 0;
     }
+  }
+
+  // a completed mid-air somersault pays a bonus that scales with the chain
+  function onFlip() {
+    player.flips++;
+    const bonus = 2 * (1 + Math.floor(chainSwings / 2));
+    centsEarned += bonus;
+    Audio.big();
+    vibrate(8);
+    floatText(player.x, player.y - 24, 'SALTO! +' + bonus + '¢', '#8af4ff');
+    burst(player.x, player.y, '#8af4ff', 8);
+    updateHud();
   }
 
   function onDown(e) {
@@ -411,7 +418,20 @@
     // trail
     player.trail.push({ x: player.x, y: player.y });
     if (player.trail.length > 18) player.trail.shift();
-    player.rot += (player.vx * 0.0006 + 0.04);
+
+    // rotation: hang along the rope while swinging, somersault while free
+    if (player.anchor) {
+      const a = player.anchor;
+      const target = Math.atan2(player.y - a.y, player.x - a.x) - Math.PI / 2;
+      player.rot += (target - player.rot) * Math.min(1, dt * 12);
+    } else {
+      player.rot += player.spin * dt;
+      player.flipAccum += player.spin * dt;
+      if (Math.abs(player.flipAccum) >= Math.PI * 2) {
+        player.flipAccum -= Math.sign(player.flipAccum) * Math.PI * 2;
+        onFlip();
+      }
+    }
 
     // camera follows, biased so player sits left-of-center
     const targetCam = player.x - W * 0.34;
@@ -452,35 +472,13 @@
       }
     }
 
-    // ground / platform interaction
-    const gY = groundY();
-    let onPlat = null;
-    for (const p of platforms) {
-      if (player.x > p.x0 && player.x < p.x1) { onPlat = p; break; }
+    // water below — touch it and the run ends (no ground to roll on)
+    const waterY = groundY();
+    if (player.y + player.r >= waterY) {
+      player.y = waterY;
+      burst(player.x, waterY, '#8af4ff', 16);
+      return die('SPLASH!');
     }
-    if (player.y + player.r >= gY) {
-      if (onPlat && !player.anchor) {
-        // landed/skidded on a platform — survivable but resets the chain
-        player.y = gY - player.r;
-        if (player.vy > 0) player.vy = 0;
-        player.vx = Math.max(player.vx * 0.985, game.speed * 0.7);
-        if (!player.grounded) {
-          player.grounded = true;
-          bestChain = Math.max(bestChain, chainSwings);
-          chainSwings = 0;
-          burst(player.x, gY, '#4be1ec', 6);
-        }
-        player.grounded = true;
-      } else if (player.y > gY + 40) {
-        // fell into a gap
-        return die('DOWN YOU GO');
-      }
-    } else {
-      player.grounded = false;
-    }
-
-    // off the top is fine; fell far below screen = dead
-    if (player.y - game.camYoffset() > H + 120) return die('DOWN YOU GO');
 
     // fx decay
     game.shake = Math.max(0, game.shake - dt * 60);
@@ -492,9 +490,9 @@
     }
     for (const f of floaters) { f.life -= dt; f.y += f.vy * dt; f.vy *= 0.96; }
 
-    // release hint when grounded & an anchor is available
-    if (player.grounded && !player.anchor && findAnchor()) {
-      els.releaseHint.textContent = 'hold to grab';
+    // early coaching hint: teach the hold/release rhythm
+    if (game.t < 6 && !player.anchor && distanceM < 14) {
+      els.releaseHint.textContent = 'HOLD to swing';
       els.releaseHint.classList.remove('hidden');
     } else {
       els.releaseHint.classList.add('hidden');
@@ -632,21 +630,23 @@
   }
 
   function drawGround() {
-    const gY = groundY();
-    for (const p of platforms) {
-      const w = p.x1 - p.x0;
-      const grad = ctx.createLinearGradient(0, gY, 0, H + 60);
-      grad.addColorStop(0, '#2b3168');
-      grad.addColorStop(1, '#161a3a');
-      ctx.fillStyle = grad;
-      roundRectPath(p.x0, gY, w, H, 6);
-      ctx.fill();
-      // top edge highlight
-      ctx.fillStyle = '#4be1ec';
-      ctx.globalAlpha = 0.5;
-      ctx.fillRect(p.x0, gY - 2, w, 3);
-      ctx.globalAlpha = 1;
+    // deadly water below the play area, with a shimmering wavy surface
+    const wy = groundY();
+    const left = game.camX - 20, right = game.camX + W + 20;
+    const grad = ctx.createLinearGradient(0, wy, 0, H);
+    grad.addColorStop(0, 'rgba(70,110,220,0.55)');
+    grad.addColorStop(1, 'rgba(10,16,50,0.96)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(left, wy, right - left, H);
+    // wavy surface highlight
+    ctx.strokeStyle = 'rgba(140,244,255,0.7)';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    for (let x = left; x <= right; x += 12) {
+      const yy = wy + Math.sin(x * 0.045 + game.t * 3) * 4;
+      if (x === left) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
     }
+    ctx.stroke();
   }
 
   function drawAnchors() {
@@ -741,6 +741,7 @@
     const spd = Math.hypot(player.vx, player.vy);
     ctx.save();
     ctx.translate(player.x, player.y);
+    ctx.rotate(player.rot);
     // outer glow
     ctx.shadowColor = '#ffd23f';
     ctx.shadowBlur = 16;
@@ -750,14 +751,16 @@
     ctx.fillStyle = g;
     ctx.beginPath(); ctx.arc(0, 0, player.r, 0, 7); ctx.fill();
     ctx.shadowBlur = 0;
-    // face dot indicating direction
+    // bold stripe + face so spins/somersaults read clearly
+    ctx.strokeStyle = '#c8791a';
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(-player.r + 2, 0); ctx.lineTo(player.r - 2, 0); ctx.stroke();
     ctx.fillStyle = '#3a2a00';
-    const fa = Math.atan2(player.vy, player.vx);
-    ctx.beginPath(); ctx.arc(Math.cos(fa) * 5, Math.sin(fa) * 5, 3, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(4, -4, 2.6, 0, 7); ctx.fill();
     ctx.restore();
 
     // speed lines when flying fast
-    if (spd > 620 && !player.grounded) {
+    if (spd > 620 && !player.anchor) {
       ctx.strokeStyle = 'rgba(255,255,255,0.35)';
       ctx.lineWidth = 2;
       const a = Math.atan2(player.vy, player.vx);
