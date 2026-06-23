@@ -32,10 +32,7 @@
     releaseHint: document.getElementById('releaseHint'),
     installBtn: document.getElementById('installBtn'),
     toast: document.getElementById('toast'),
-    walletVal: document.getElementById('walletVal'),
-    skins: document.getElementById('skins'),
-    skinDesc: document.getElementById('skinDesc'),
-    ballsBtn: document.getElementById('ballsBtn'),
+    legend: document.getElementById('legend'),
   };
 
   let W = 0, H = 0, DPR = 1;
@@ -62,18 +59,27 @@
   }
   function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch {} }
 
-  // ---------------------------------------------------------------- skins
-  // Each ball is both a colour and a distinct "feel" (a type of swinging):
+  // ------------------------------------------------------------ anchor types
+  // Every anchor point in the world is one of these — grabbing it initiates a
+  // different *kind* of swing. Colour-coded so you can read them mid-flight.
   // grav = fall weight, cruise = forward speed, reel = climb pull, spin = flips
-  const SKINS = [
-    { id: 'classic', name: 'Classic', kind: 'Pendulum', type: 'rope',    col1: '#fff7d6', col2: '#ffb938', stripe: '#c8791a', grav: 1.0,  cruise: 1.0,  reel: 1.0, spin: 1.0, ropeCap: 0.50, cost: 0 },
-    { id: 'aqua',    name: 'Aqua',    kind: 'Glide',    type: 'glide',   col1: '#e9fcff', col2: '#3fd0e6', stripe: '#1f7f8f', grav: 0.72, cruise: 1.0,  reel: 1.0, spin: 1.2, ropeCap: 0.50, cost: 60 },
-    { id: 'ruby',    name: 'Ruby',    kind: 'Bungee',   type: 'elastic', col1: '#ffe1e7', col2: '#ff4d6a', stripe: '#a01030', grav: 1.08, cruise: 1.05, reel: 1.0, spin: 0.95, ropeCap: 0.55, cost: 150 },
-    { id: 'mint',    name: 'Mint',    kind: 'Zip',      type: 'zip',     col1: '#ecffe6', col2: '#52e06a', stripe: '#1f8f3a', grav: 1.0,  cruise: 1.12, reel: 1.0, spin: 1.0, ropeCap: 0.50, cost: 300 },
-    { id: 'violet',  name: 'Violet',  kind: 'Long swing', type: 'long',  col1: '#f4e9ff', col2: '#a04dff', stripe: '#5a1f8f', grav: 0.85, cruise: 1.0,  reel: 0.6, spin: 1.4, ropeCap: 0.72, cost: 600 },
-  ];
-  const skinById = id => SKINS.find(s => s.id === id) || SKINS[0];
-  let feel = skinById(save.skin);
+  const ANCHOR_TYPES = {
+    rope:    { type: 'rope',    name: 'Pendulum', col: '#8af4ff', grav: 1.0,  cruise: 1.0,  reel: 1.0, spin: 1.0, ropeCap: 0.50 },
+    glide:   { type: 'glide',   name: 'Glide',    col: '#6cf07a', grav: 0.72, cruise: 1.0,  reel: 1.0, spin: 1.2, ropeCap: 0.50 },
+    elastic: { type: 'elastic', name: 'Bungee',   col: '#ff6b9a', grav: 1.05, cruise: 1.05, reel: 1.0, spin: 0.95, ropeCap: 0.55 },
+    zip:     { type: 'zip',     name: 'Zip',      col: '#ffd23f', grav: 1.0,  cruise: 1.12, reel: 1.0, spin: 1.0, ropeCap: 0.50 },
+    long:    { type: 'long',    name: 'Long',     col: '#c08bff', grav: 0.85, cruise: 1.0,  reel: 0.6, spin: 1.4, ropeCap: 0.72 },
+  };
+  // which type a hold currently uses (set from the grabbed anchor)
+  let feel = ANCHOR_TYPES.rope;
+
+  // weighted pick for a newly generated anchor; variety grows with difficulty
+  function pickAnchorType(d) {
+    if (d < 0.4) return 'rope';
+    const pool = ['rope', 'rope', 'glide', 'elastic', 'zip'];
+    if (d > 1.0) pool.push('long', 'glide', 'zip');
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
 
   // ---------------------------------------------------------------- audio
   const Audio = (() => {
@@ -202,7 +208,7 @@
     aimAnchor = null;
     milestone = 200;
     player._skim = false;
-    feel = skinById(save.skin);
+    feel = ANCHOR_TYPES.rope;
 
     anchors = []; cents = []; drones = []; platforms = []; particles = []; floaters = [];
     genX = 0; lastPlatformEnd = 0; nextAnchorX = 0;
@@ -229,7 +235,7 @@
 
     // begin already hooked & swinging on a friendly anchor, so the player
     // is in the air from frame one and can't faceplant before learning
-    const a0 = { x: player.x + 120, y: groundY() - H * 0.66, id: -1, pulse: 1 };
+    const a0 = { x: player.x + 120, y: groundY() - H * 0.66, id: -1, pulse: 1, type: 'rope' };
     anchors.unshift(a0);
     player.anchor = a0;
     player.ropeLen = Math.hypot(a0.x - player.x, a0.y - player.y);
@@ -247,7 +253,7 @@
       (anchors.length ? anchors[anchors.length - 1].y : H * 0.32) + rand(-100, 100),
       skyTop, skyBottom
     );
-    anchors.push({ x: nextAnchorX, y: ay, id: nextAnchorX | 0, pulse: 0 });
+    anchors.push({ x: nextAnchorX, y: ay, id: nextAnchorX | 0, pulse: 0, type: pickAnchorType(d) });
 
     // cents arcing below the anchor — reward dipping low on a swing
     if (Math.random() < 0.85) {
@@ -314,6 +320,8 @@
     const a = findAnchor();
     if (!a) return;
     player.anchor = a;
+    // this anchor's type decides the kind of swing you're now doing
+    feel = ANCHOR_TYPES[a.type] || ANCHOR_TYPES.rope;
     // cap the rope so it never grows unbounded across swings (which made
     // the player sink lower and lower); a too-long grab gently pulls up
     player.ropeLen = Math.min(Math.hypot(a.x - player.x, a.y - player.y), H * (feel.ropeCap || 0.5));
@@ -328,7 +336,9 @@
     const len = Math.hypot(dx, dy) || 1;
     let tx = -dy / len, ty = dx / len;      // tangent to the rope
     if (tx < 0) { tx = -tx; ty = -ty; }     // bias forward (+x)
-    const sp = Math.max(Math.hypot(player.vx, player.vy), 240);
+    // keep your speed (don't bleed it), but also don't let rapid re-grabs
+    // inflate it — clamp into a sane swing range
+    const sp = clamp(Math.hypot(player.vx, player.vy), 200, 560);
     player.vx = tx * sp; player.vy = ty * sp;
     chainSwings++;
     Audio.grab();
@@ -458,9 +468,10 @@
           player.ropeLen = Math.max(80, player.ropeLen - 240 * feel.reel * dt);
         }
       }
-      // soft cap so momentum-preserving grabs can't snowball out of control
+      // soft cap so momentum-preserving grabs (or fast tapping) can't
+      // snowball out of control
       const s = Math.hypot(player.vx, player.vy);
-      if (s > 900) { player.vx *= 900 / s; player.vy *= 900 / s; }
+      if (s > 740) { player.vx *= 740 / s; player.vy *= 740 / s; }
     } else {
       // free flight: hold a forward cruise so momentum never collapses into a
       // vertical drop — you always sail on toward the next anchor
@@ -630,7 +641,6 @@
     const newBestCents = centsEarned > save.bestCents;
     save.bestDist = Math.max(save.bestDist, distanceM);
     save.bestCents = Math.max(save.bestCents, centsEarned);
-    save.coins += centsEarned;        // bank the run's cents to spend on balls
     persist();
 
     els.goTitle.textContent = reason;
@@ -771,18 +781,31 @@
     for (const a of anchors) {
       if (a.x < game.camX - 60 || a.x > game.camX + W + 60) continue;
       const pulse = a.pulse || 0;
+      const col = (ANCHOR_TYPES[a.type] || ANCHOR_TYPES.rope).col;
       ctx.save();
-      // glow
+      // glow (colour = swing type)
       ctx.globalAlpha = 0.25 + pulse * 0.5;
-      ctx.fillStyle = '#4be1ec';
+      ctx.fillStyle = col;
       ctx.beginPath(); ctx.arc(a.x, a.y, 12 + pulse * 10, 0, 7); ctx.fill();
       ctx.globalAlpha = 1;
       // ring
-      ctx.strokeStyle = '#8af4ff';
-      ctx.lineWidth = 2.5;
-      ctx.beginPath(); ctx.arc(a.x, a.y, 6, 0, 7); ctx.stroke();
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(a.x, a.y, 7, 0, 7); ctx.stroke();
       ctx.fillStyle = '#0d1020';
-      ctx.beginPath(); ctx.arc(a.x, a.y, 3, 0, 7); ctx.fill();
+      ctx.beginPath(); ctx.arc(a.x, a.y, 3.5, 0, 7); ctx.fill();
+      // glyph hint per type so they're distinguishable beyond colour
+      ctx.fillStyle = col;
+      const ty = a.type;
+      if (ty === 'glide') { // up chevron
+        ctx.beginPath(); ctx.moveTo(a.x, a.y - 13); ctx.lineTo(a.x - 4, a.y - 9); ctx.lineTo(a.x + 4, a.y - 9); ctx.closePath(); ctx.fill();
+      } else if (ty === 'elastic') { // springy double ring
+        ctx.globalAlpha = 0.7; ctx.beginPath(); ctx.arc(a.x, a.y, 11, 0, 7); ctx.stroke(); ctx.globalAlpha = 1;
+      } else if (ty === 'zip') { // forward dart
+        ctx.fillRect(a.x + 8, a.y - 1.5, 7, 3);
+      } else if (ty === 'long') { // long tail
+        ctx.globalAlpha = 0.6; ctx.fillRect(a.x - 1, a.y + 6, 2, 12); ctx.globalAlpha = 1;
+      }
 
       // highlight the anchor a hold would grab next, so you can aim
       if (a === aimAnchor) {
@@ -899,7 +922,7 @@
     if (!player.anchor) return;
     const a = player.anchor;
     ctx.save();
-    ctx.strokeStyle = '#8af4ff';
+    ctx.strokeStyle = feel.col || '#8af4ff';
     ctx.lineWidth = 2.2;
     ctx.shadowColor = '#4be1ec';
     ctx.shadowBlur = 8;
@@ -916,7 +939,7 @@
       const t = player.trail[i];
       const k = i / player.trail.length;
       ctx.globalAlpha = k * 0.4;
-      ctx.fillStyle = feel.col2;
+      ctx.fillStyle = feel.col;          // trail tinted by current swing type
       ctx.beginPath(); ctx.arc(t.x, t.y, player.r * k * 0.9, 0, 7); ctx.fill();
     }
     ctx.globalAlpha = 1;
@@ -925,17 +948,17 @@
     ctx.save();
     ctx.translate(player.x, player.y);
     ctx.rotate(player.rot);
-    // outer glow
-    ctx.shadowColor = feel.col2;
+    // outer glow tinted by the swing type you're on
+    ctx.shadowColor = feel.col;
     ctx.shadowBlur = 16;
     const g = ctx.createRadialGradient(0, -3, 2, 0, 0, player.r);
-    g.addColorStop(0, feel.col1);
-    g.addColorStop(1, feel.col2);
+    g.addColorStop(0, '#fff7d6');
+    g.addColorStop(1, '#ffb938');
     ctx.fillStyle = g;
     ctx.beginPath(); ctx.arc(0, 0, player.r, 0, 7); ctx.fill();
     ctx.shadowBlur = 0;
     // bold stripe + face so spins/somersaults read clearly
-    ctx.strokeStyle = feel.stripe;
+    ctx.strokeStyle = '#c8791a';
     ctx.lineWidth = 3;
     ctx.beginPath(); ctx.moveTo(-player.r + 2, 0); ctx.lineTo(player.r - 2, 0); ctx.stroke();
     ctx.fillStyle = '#3a2a00';
@@ -1025,68 +1048,23 @@
     } catch {}
   });
 
-  els.ballsBtn.addEventListener('click', showMenu);
-
   // ---------------------------------------------------------------- menus
   function refreshMenu() {
     els.bestDist.textContent = save.bestDist;
-    els.walletVal.textContent = save.coins;
-    renderSkins();
+    els.bestCents.textContent = save.bestCents;
+    renderLegend();
   }
 
-  function setDesc(s) {
-    const owned = save.unlocked.includes(s.id);
-    els.skinDesc.innerHTML = owned
-      ? `<b>${s.name}</b> — ${s.kind}`
-      : `<b>${s.name}</b> — ${s.kind} · costs <b>${s.cost}¢</b>`;
-  }
-
-  function renderSkins() {
-    els.skins.innerHTML = '';
-    for (const s of SKINS) {
-      const owned = save.unlocked.includes(s.id);
+  // show what each anchor colour means
+  function renderLegend() {
+    if (els.legend.childElementCount) return;   // build once
+    for (const key of Object.keys(ANCHOR_TYPES)) {
+      const t = ANCHOR_TYPES[key];
       const el = document.createElement('div');
-      el.className = 'skin' + (save.skin === s.id ? ' selected' : '') + (owned ? '' : ' locked');
-      el.style.background = `radial-gradient(circle at 38% 32%, ${s.col1}, ${s.col2})`;
-      if (!owned) {
-        const lock = document.createElement('div');
-        lock.className = 'lock';
-        lock.textContent = save.coins >= s.cost ? s.cost + '¢' : '🔒';
-        el.appendChild(lock);
-      }
-      el.addEventListener('click', () => pickSkin(s));
-      els.skins.appendChild(el);
+      el.className = 'leg';
+      el.innerHTML = `<span class="dot2" style="background:${t.col};color:${t.col}"></span>${t.name}`;
+      els.legend.appendChild(el);
     }
-    const cur = skinById(save.skin);
-    setDesc(cur);
-  }
-
-  function pickSkin(s) {
-    if (save.unlocked.includes(s.id)) {
-      save.skin = s.id; feel = s; persist(); renderSkins();
-      Audio.coin(4); vibrate(6);
-    } else if (save.coins >= s.cost) {
-      save.coins -= s.cost;
-      save.unlocked.push(s.id);
-      save.skin = s.id; feel = s; persist();
-      els.walletVal.textContent = save.coins;
-      renderSkins();
-      Audio.big(); vibrate([10, 30, 10]);
-      toast('Unlocked ' + s.name + '!');
-    } else {
-      setDesc(s);
-      toast('Need ' + (s.cost - save.coins) + '¢ more');
-      vibrate(20);
-    }
-  }
-
-  function showMenu() {
-    game.state = 'menu';
-    reset();
-    els.gameover.classList.add('hidden');
-    els.menu.classList.remove('hidden');
-    els.hud.style.opacity = '0';
-    refreshMenu();
   }
 
   refreshMenu();

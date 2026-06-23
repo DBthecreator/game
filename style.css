@@ -141,38 +141,14 @@ html, body {
 .how { font-size: 14px; line-height: 1.6; opacity: .8; max-width: 320px; }
 .how b { color: var(--accent2); }
 
-/* ---------- ball picker ---------- */
-.picker { display: flex; flex-direction: column; align-items: center; gap: 10px; width: 100%; max-width: 360px; }
+/* ---------- anchor-type legend ---------- */
 .picker-title { font-size: 12px; letter-spacing: 1px; text-transform: uppercase; opacity: .6; }
-.skins {
-  display: flex; gap: 14px; padding: 4px 8px;
-  max-width: 100%; overflow-x: auto; pointer-events: auto;
-  scrollbar-width: none;
+.legend {
+  display: flex; flex-wrap: wrap; gap: 8px 14px;
+  justify-content: center; max-width: 340px;
 }
-.skins::-webkit-scrollbar { display: none; }
-.skin {
-  position: relative;
-  flex: 0 0 auto;
-  width: 54px; height: 54px; border-radius: 50%;
-  border: 3px solid transparent;
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  transition: transform .12s ease;
-  box-shadow: inset 0 -6px 10px rgba(0,0,0,.25), 0 4px 12px rgba(0,0,0,.35);
-}
-.skin:active { transform: scale(.92); }
-.skin.selected { border-color: #fff; transform: scale(1.08); }
-.skin.locked { filter: grayscale(.7) brightness(.6); }
-.skin .lock {
-  position: absolute; inset: 0;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 11px; font-weight: 800; color: #fff;
-  text-shadow: 0 1px 3px rgba(0,0,0,.8);
-}
-.skin-desc { font-size: 13px; min-height: 18px; opacity: .9; text-align: center; }
-.skin-desc b { color: var(--accent); }
-
-.go-row { display: flex; gap: 10px; }
+.legend .leg { display: flex; align-items: center; gap: 6px; font-size: 13px; opacity: .9; }
+.legend .dot2 { width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 8px currentColor; }
 
 /* ---------- Game over ---------- */
 .go-title {
