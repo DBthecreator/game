@@ -199,6 +199,11 @@
     initStars();
     // pre-generate world to the right
     while (genX < player.x + W * 2) generateChunk();
+
+    // guarantee a friendly, in-reach anchor right above the start so the
+    // very first hold always hooks — no frustrating empty grab
+    anchors.unshift({ x: player.x + 150, y: groundY() - H * 0.36, id: -1, pulse: 0 });
+    cents.push({ x: player.x + 150, y: groundY() - H * 0.18, taken: false, bob: 0 });
   }
 
   // Procedurally extend the world to the right.
@@ -209,7 +214,7 @@
     // --- anchors: a flowing line of grapple points across the sky ---
     const anchorGap = rand(150, 210) - Math.min(40, d * 4);
     nextAnchorX = (nextAnchorX || genX) + Math.max(110, anchorGap);
-    const skyTop = H * 0.12, skyBottom = H * 0.46;
+    const skyTop = H * 0.26, skyBottom = H * 0.5;
     const ay = clamp(
       (anchors.length ? anchors[anchors.length - 1].y : H * 0.3) + rand(-90, 90),
       skyTop, skyBottom
@@ -271,7 +276,7 @@
   function findAnchor() {
     // best anchor ahead of player & overhead, within reach
     let best = null, bestScore = Infinity;
-    const maxLen = Math.min(H * 0.62, 360);
+    const maxLen = Math.min(H * 0.95, 560);
     for (const a of anchors) {
       const dx = a.x - player.x;
       const dy = a.y - player.y;
@@ -360,6 +365,10 @@
     game.t += dt;
     difficulty = game.t / 22;        // ramps over time
     game.speed = 70 + difficulty * 16;
+
+    // holding the screen continuously seeks the next anchor, so a swing
+    // chains the instant a reachable anchor appears — no pixel-perfect tap
+    if (pressing && !player.anchor) grab();
 
     // integrate
     player.vy += GRAV * dt;
