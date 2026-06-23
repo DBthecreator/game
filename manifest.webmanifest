@@ -1,0 +1,14 @@
+{
+  "name": "HOOKED",
+  "short_name": "HOOKED",
+  "description": "Fling yourself across an endless skyline on grappling tethers. Hold to swing, release to fly.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "fullscreen",
+  "orientation": "portrait",
+  "background_color": "#0d1020",
+  "theme_color": "#0d1020",
+  "icons": [
+    { "src": "icons/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

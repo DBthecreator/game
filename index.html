@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0d1020" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="description" content="HOOKED — fling yourself across an endless skyline on grappling tethers. Hold to swing, release to fly. One more go." />
+  <title>HOOKED</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="icons/icon.svg" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="game">
+    <canvas id="canvas"></canvas>
+
+    <!-- In-game HUD -->
+    <div class="hud" id="hud">
+      <div class="hud-row">
+        <div class="stat">
+          <span class="stat-label">DIST</span>
+          <span class="stat-value" id="distVal">0<small>m</small></span>
+        </div>
+        <div class="stat stat-center">
+          <span class="combo-chip hidden" id="comboChip">x1</span>
+        </div>
+        <div class="stat stat-right">
+          <span class="stat-label">CENTS</span>
+          <span class="stat-value" id="centsVal">0<small>¢</small></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Start / Menu -->
+    <div class="overlay" id="menu">
+      <div class="logo">
+        <span class="logo-main">HOOKED</span>
+        <span class="logo-sub">swing · fling · survive</span>
+      </div>
+      <button class="play-btn" id="playBtn">PLAY</button>
+      <div class="best-line">
+        <span>Best <b id="bestDist">0</b> m</span>
+        <span class="dot">•</span>
+        <span><b id="bestCents">0</b>¢ banked</span>
+      </div>
+      <div class="how">
+        <b>Hold</b> anywhere to grapple &amp; swing — <b>release</b> to fly.<br/>
+        Chain swings without touching ground to grow your <b>combo</b>.
+      </div>
+      <button class="ghost-btn" id="muteBtn">🔊 Sound on</button>
+    </div>
+
+    <!-- Game over -->
+    <div class="overlay hidden" id="gameover">
+      <div class="go-title" id="goTitle">DOWN YOU GO</div>
+      <div class="go-stats">
+        <div class="go-stat"><span id="goDist">0</span><small>meters</small></div>
+        <div class="go-stat"><span id="goCents">0</span><small>cents</small></div>
+        <div class="go-stat"><span id="goCombo">x1</span><small>best chain</small></div>
+      </div>
+      <div class="go-best hidden" id="goBest">★ NEW BEST ★</div>
+      <button class="play-btn" id="retryBtn">GO AGAIN</button>
+      <button class="ghost-btn" id="shareBtn">Share score</button>
+    </div>
+
+    <div class="hint hidden" id="releaseHint">release!</div>
+  </div>
+
+  <button class="install-btn hidden" id="installBtn">⤓ Install</button>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="game.js"></script>
+</body>
+</html>

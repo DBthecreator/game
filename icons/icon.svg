@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#1b2350"/>
+      <stop offset="1" stop-color="#0d1020"/>
+    </linearGradient>
+    <radialGradient id="orb" cx="0.4" cy="0.35" r="0.7">
+      <stop offset="0" stop-color="#fff7d6"/>
+      <stop offset="1" stop-color="#ffb938"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <!-- anchor -->
+  <circle cx="356" cy="150" r="18" fill="#8af4ff"/>
+  <circle cx="356" cy="150" r="8" fill="#0d1020"/>
+  <!-- rope -->
+  <line x1="356" y1="150" x2="214" y2="330" stroke="#8af4ff" stroke-width="9" stroke-linecap="round"/>
+  <!-- swinging orb -->
+  <circle cx="214" cy="330" r="46" fill="url(#orb)"/>
+  <circle cx="226" cy="322" r="11" fill="#3a2a00"/>
+  <!-- motion arc -->
+  <path d="M120 300 A 150 150 0 0 0 214 376" fill="none" stroke="#ffd23f" stroke-width="7" stroke-linecap="round" opacity="0.5"/>
+</svg>
