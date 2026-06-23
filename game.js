@@ -65,10 +65,10 @@
   // grav = fall weight, cruise = forward speed, reel = climb pull, spin = flips
   const ANCHOR_TYPES = {
     rope:    { type: 'rope',    name: 'Pendulum', col: '#8af4ff', grav: 1.0,  cruise: 1.0,  reel: 1.0, spin: 1.0, ropeCap: 0.50 },
-    glide:   { type: 'glide',   name: 'Glide',    col: '#6cf07a', grav: 0.72, cruise: 1.0,  reel: 1.0, spin: 1.2, ropeCap: 0.50 },
+    glide:   { type: 'glide',   name: 'Glide',    col: '#6cf07a', grav: 0.9,  cruise: 1.0,  reel: 1.0, spin: 1.15, ropeCap: 0.50 },
     elastic: { type: 'elastic', name: 'Bungee',   col: '#ff6b9a', grav: 1.05, cruise: 1.05, reel: 1.0, spin: 0.95, ropeCap: 0.55 },
     zip:     { type: 'zip',     name: 'Zip',      col: '#ffd23f', grav: 1.0,  cruise: 1.12, reel: 1.0, spin: 1.0, ropeCap: 0.50 },
-    long:    { type: 'long',    name: 'Long',     col: '#c08bff', grav: 0.85, cruise: 1.0,  reel: 0.6, spin: 1.4, ropeCap: 0.72 },
+    long:    { type: 'long',    name: 'Power',    col: '#c08bff', grav: 0.95, cruise: 1.08, reel: 0.95, spin: 1.2, ropeCap: 0.58 },
   };
   // which type a hold currently uses (set from the grabbed anchor)
   let feel = ANCHOR_TYPES.rope;
@@ -441,8 +441,15 @@
       const fwd = (player.vx * tx + player.vy * ty) >= 0 ? 1 : -1;
 
       if (feel.type === 'glide') {
-        // floaty swoop — holding lifts and pushes you forward (barely a rope)
-        if (pressing) { player.vx += 250 * dt; player.vy -= 380 * dt; }
+        // smooth hang-glide: holding eases you into a gentle forward climb
+        // (bounded, never rockets up); you slip off the anchor as you pass it
+        if (pressing) {
+          const tvy = -90;                              // gentle climb target
+          player.vy += (tvy - player.vy) * 5 * dt;
+          const tvx = 250 * feel.cruise;
+          player.vx += (tvx - player.vx) * 3.5 * dt;
+        }
+        if (dist > player.ropeLen * 1.7) letGo();        // glided past it
       } else if (feel.type === 'elastic') {
         // bungee — spring toward the rope length, bouncy; pump to build it
         const stretch = dist - player.ropeLen;
@@ -497,16 +504,8 @@
           const radial = player.vx * nx + player.vy * ny;
           if (radial > 0) { player.vx -= radial * nx; player.vy -= radial * ny; }
         }
-      } else if (feel.type === 'glide') {
-        // soft outer tether so you can't drift infinitely from the anchor
-        const maxd = player.ropeLen * 1.6;
-        if (dist > maxd) {
-          const nx = dx / dist, ny = dy / dist;
-          player.x = a.x + nx * maxd; player.y = a.y + ny * maxd;
-          const radial = player.vx * nx + player.vy * ny;
-          if (radial > 0) { player.vx -= radial * nx; player.vy -= radial * ny; }
-        }
       }
+      // glide is intentionally untethered — it auto-releases as you pass
       a.pulse = Math.max(a.pulse, 0.6);
     }
 
