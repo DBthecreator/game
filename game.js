@@ -32,6 +32,10 @@
     releaseHint: document.getElementById('releaseHint'),
     installBtn: document.getElementById('installBtn'),
     toast: document.getElementById('toast'),
+    walletVal: document.getElementById('walletVal'),
+    skins: document.getElementById('skins'),
+    skinDesc: document.getElementById('skinDesc'),
+    ballsBtn: document.getElementById('ballsBtn'),
   };
 
   let W = 0, H = 0, DPR = 1;
@@ -50,12 +54,26 @@
 
   // ---------------------------------------------------------------- storage
   const SAVE_KEY = 'hooked.save.v1';
+  const DEFAULT_SAVE = { bestDist: 0, bestCents: 0, muted: false, coins: 0, skin: 'classic', unlocked: ['classic'] };
   const save = loadSave();
   function loadSave() {
-    try { return Object.assign({ bestDist: 0, bestCents: 0, muted: false }, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); }
-    catch { return { bestDist: 0, bestCents: 0, muted: false }; }
+    try { return Object.assign({}, DEFAULT_SAVE, JSON.parse(localStorage.getItem(SAVE_KEY) || '{}')); }
+    catch { return Object.assign({}, DEFAULT_SAVE); }
   }
   function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch {} }
+
+  // ---------------------------------------------------------------- skins
+  // Each ball is both a colour and a distinct "feel" (a type of swinging):
+  // grav = fall weight, cruise = forward speed, reel = climb pull, spin = flips
+  const SKINS = [
+    { id: 'classic', name: 'Classic', kind: 'Pendulum', type: 'rope',    col1: '#fff7d6', col2: '#ffb938', stripe: '#c8791a', grav: 1.0,  cruise: 1.0,  reel: 1.0, spin: 1.0, ropeCap: 0.50, cost: 0 },
+    { id: 'aqua',    name: 'Aqua',    kind: 'Glide',    type: 'glide',   col1: '#e9fcff', col2: '#3fd0e6', stripe: '#1f7f8f', grav: 0.72, cruise: 1.0,  reel: 1.0, spin: 1.2, ropeCap: 0.50, cost: 60 },
+    { id: 'ruby',    name: 'Ruby',    kind: 'Bungee',   type: 'elastic', col1: '#ffe1e7', col2: '#ff4d6a', stripe: '#a01030', grav: 1.08, cruise: 1.05, reel: 1.0, spin: 0.95, ropeCap: 0.55, cost: 150 },
+    { id: 'mint',    name: 'Mint',    kind: 'Zip',      type: 'zip',     col1: '#ecffe6', col2: '#52e06a', stripe: '#1f8f3a', grav: 1.0,  cruise: 1.12, reel: 1.0, spin: 1.0, ropeCap: 0.50, cost: 300 },
+    { id: 'violet',  name: 'Violet',  kind: 'Long swing', type: 'long',  col1: '#f4e9ff', col2: '#a04dff', stripe: '#5a1f8f', grav: 0.85, cruise: 1.0,  reel: 0.6, spin: 1.4, ropeCap: 0.72, cost: 600 },
+  ];
+  const skinById = id => SKINS.find(s => s.id === id) || SKINS[0];
+  let feel = skinById(save.skin);
 
   // ---------------------------------------------------------------- audio
   const Audio = (() => {
@@ -184,6 +202,7 @@
     aimAnchor = null;
     milestone = 200;
     player._skim = false;
+    feel = skinById(save.skin);
 
     anchors = []; cents = []; drones = []; platforms = []; particles = []; floaters = [];
     genX = 0; lastPlatformEnd = 0; nextAnchorX = 0;
@@ -295,7 +314,7 @@
     player.anchor = a;
     // cap the rope so it never grows unbounded across swings (which made
     // the player sink lower and lower); a too-long grab gently pulls up
-    player.ropeLen = Math.min(Math.hypot(a.x - player.x, a.y - player.y), H * 0.5);
+    player.ropeLen = Math.min(Math.hypot(a.x - player.x, a.y - player.y), H * (feel.ropeCap || 0.5));
     a.pulse = 1;
     player.grounded = false;
     player.spin = 0;
@@ -321,10 +340,10 @@
       Audio.release();
       // always launch forward & slightly up, so even a mistimed release flies
       // on with a somersault instead of dropping straight down
-      player.vx = Math.max(player.vx + 70, 230);
-      player.vy = Math.min(player.vy, -90);
+      player.vx = Math.max(player.vx + 50, 200);
+      player.vy = Math.min(player.vy, -80);
       const sp = Math.hypot(player.vx, player.vy);
-      player.spin = clamp(4 + sp / 90, 5, 16);
+      player.spin = clamp(4 + sp / 95, 5, 15) * feel.spin;
       player.flipAccum = 0;
     }
   }
@@ -390,57 +409,90 @@
 
   function step(dt) {
     game.t += dt;
-    difficulty = game.t / 22;        // ramps over time
-    game.speed = 70 + difficulty * 16;
+    difficulty = game.t / 30;        // ramps over time (gentler now)
+    game.speed = 60 + difficulty * 12;
 
     // holding the screen continuously seeks the next anchor, so a swing
     // chains the instant a reachable anchor appears — no pixel-perfect tap
     if (pressing && !player.anchor) grab();
 
-    // integrate
-    player.vy += GRAV * dt;
+    // integrate (gravity weight depends on the chosen ball's feel)
+    player.vy += GRAV * feel.grav * dt;
 
     if (player.anchor) {
-      // pump the swing for amplitude, plus a gentle forward drive so simply
-      // holding always makes you progress along the line
+      // each ball drives a different *type* of swing
       const a = player.anchor;
-      const ang = Math.atan2(player.y - a.y, player.x - a.x);
-      const tang = ang + Math.PI / 2;
-      if (pressing) {
-        const swingDir = Math.sign(player.vx) || 1;
-        player.vx += Math.cos(tang) * swingDir * 240 * dt;
-        player.vy += Math.sin(tang) * swingDir * 240 * dt;
-        player.vx += 120 * dt;
-        // reel the rope in while holding → climb back up and accelerate,
-        // so successive swings don't sink you into the water
-        player.ropeLen = Math.max(80, player.ropeLen - 300 * dt);
+      const dx = player.x - a.x, dy = player.y - a.y;
+      const dist = Math.hypot(dx, dy) || 0.0001;
+      const nx = dx / dist, ny = dy / dist;            // radial (outward)
+      const tx = -ny, ty = nx;                          // tangent
+      const fwd = (player.vx * tx + player.vy * ty) >= 0 ? 1 : -1;
+
+      if (feel.type === 'glide') {
+        // floaty swoop — holding lifts and pushes you forward (barely a rope)
+        if (pressing) { player.vx += 250 * dt; player.vy -= 380 * dt; }
+      } else if (feel.type === 'elastic') {
+        // bungee — spring toward the rope length, bouncy; pump to build it
+        const stretch = dist - player.ropeLen;
+        const radialV = player.vx * nx + player.vy * ny;
+        player.vx -= (nx * stretch * 20 + nx * radialV * 2.4) * dt;
+        player.vy -= (ny * stretch * 20 + ny * radialV * 2.4) * dt;
+        if (pressing) {
+          player.vx += tx * fwd * 230 * dt; player.vy += ty * fwd * 230 * dt;
+          player.ropeLen = Math.max(80, player.ropeLen - 200 * feel.reel * dt);
+        }
+      } else if (feel.type === 'zip') {
+        // grapple-zip — yank straight to the anchor, then auto-launch past it
+        if (pressing) {
+          player.vx -= nx * 1600 * dt; player.vy -= ny * 1600 * dt;
+          player.vx += tx * fwd * 120 * dt; player.vy += ty * fwd * 120 * dt;
+        }
+        if (dist < 56) letGo();
+      } else {
+        // 'rope' / 'long' — rigid pendulum, pump + gentle forward drive
+        if (pressing) {
+          player.vx += tx * fwd * 200 * dt; player.vy += ty * fwd * 200 * dt;
+          player.vx += 90 * dt;
+          player.ropeLen = Math.max(80, player.ropeLen - 240 * feel.reel * dt);
+        }
       }
       // soft cap so momentum-preserving grabs can't snowball out of control
       const s = Math.hypot(player.vx, player.vy);
-      if (s > 1000) { player.vx *= 1000 / s; player.vy *= 1000 / s; }
+      if (s > 900) { player.vx *= 900 / s; player.vy *= 900 / s; }
     } else {
       // free flight: hold a forward cruise so momentum never collapses into a
       // vertical drop — you always sail on toward the next anchor
-      const cruise = 240 + difficulty * 22;
-      if (player.vx < cruise) player.vx += (cruise - player.vx) * 1.4 * dt;
-      if (player.vx < 130) player.vx = 130;
+      const cruise = (195 + difficulty * 13) * feel.cruise;
+      if (player.vx < cruise) player.vx += (cruise - player.vx) * 1.3 * dt;
+      if (player.vx < 120) player.vx = 120;
     }
 
     player.x += player.vx * dt;
     player.y += player.vy * dt;
 
-    // rope constraint (position-based) — keep on circle & kill radial vel
+    // position constraint — rigid rope types snap onto the circle; the
+    // springy / zip / glide types move under forces instead
     if (player.anchor) {
       const a = player.anchor;
-      let dx = player.x - a.x, dy = player.y - a.y;
-      let dist = Math.hypot(dx, dy) || 0.0001;
-      if (dist > player.ropeLen) {
-        const nx = dx / dist, ny = dy / dist;
-        player.x = a.x + nx * player.ropeLen;
-        player.y = a.y + ny * player.ropeLen;
-        // remove outward radial velocity component
-        const radial = player.vx * nx + player.vy * ny;
-        if (radial > 0) { player.vx -= radial * nx; player.vy -= radial * ny; }
+      const dx = player.x - a.x, dy = player.y - a.y;
+      const dist = Math.hypot(dx, dy) || 0.0001;
+      if (feel.type === 'rope' || feel.type === 'long') {
+        if (dist > player.ropeLen) {
+          const nx = dx / dist, ny = dy / dist;
+          player.x = a.x + nx * player.ropeLen;
+          player.y = a.y + ny * player.ropeLen;
+          const radial = player.vx * nx + player.vy * ny;
+          if (radial > 0) { player.vx -= radial * nx; player.vy -= radial * ny; }
+        }
+      } else if (feel.type === 'glide') {
+        // soft outer tether so you can't drift infinitely from the anchor
+        const maxd = player.ropeLen * 1.6;
+        if (dist > maxd) {
+          const nx = dx / dist, ny = dy / dist;
+          player.x = a.x + nx * maxd; player.y = a.y + ny * maxd;
+          const radial = player.vx * nx + player.vy * ny;
+          if (radial > 0) { player.vx -= radial * nx; player.vy -= radial * ny; }
+        }
       }
       a.pulse = Math.max(a.pulse, 0.6);
     }
@@ -567,6 +619,7 @@
     const newBestCents = centsEarned > save.bestCents;
     save.bestDist = Math.max(save.bestDist, distanceM);
     save.bestCents = Math.max(save.bestCents, centsEarned);
+    save.coins += centsEarned;        // bank the run's cents to spend on balls
     persist();
 
     els.goTitle.textContent = reason;
@@ -807,7 +860,7 @@
       const t = player.trail[i];
       const k = i / player.trail.length;
       ctx.globalAlpha = k * 0.4;
-      ctx.fillStyle = '#ffd23f';
+      ctx.fillStyle = feel.col2;
       ctx.beginPath(); ctx.arc(t.x, t.y, player.r * k * 0.9, 0, 7); ctx.fill();
     }
     ctx.globalAlpha = 1;
@@ -817,16 +870,16 @@
     ctx.translate(player.x, player.y);
     ctx.rotate(player.rot);
     // outer glow
-    ctx.shadowColor = '#ffd23f';
+    ctx.shadowColor = feel.col2;
     ctx.shadowBlur = 16;
     const g = ctx.createRadialGradient(0, -3, 2, 0, 0, player.r);
-    g.addColorStop(0, '#fff7d6');
-    g.addColorStop(1, '#ffb938');
+    g.addColorStop(0, feel.col1);
+    g.addColorStop(1, feel.col2);
     ctx.fillStyle = g;
     ctx.beginPath(); ctx.arc(0, 0, player.r, 0, 7); ctx.fill();
     ctx.shadowBlur = 0;
     // bold stripe + face so spins/somersaults read clearly
-    ctx.strokeStyle = '#c8791a';
+    ctx.strokeStyle = feel.stripe;
     ctx.lineWidth = 3;
     ctx.beginPath(); ctx.moveTo(-player.r + 2, 0); ctx.lineTo(player.r - 2, 0); ctx.stroke();
     ctx.fillStyle = '#3a2a00';
@@ -916,11 +969,70 @@
     } catch {}
   });
 
+  els.ballsBtn.addEventListener('click', showMenu);
+
   // ---------------------------------------------------------------- menus
   function refreshMenu() {
     els.bestDist.textContent = save.bestDist;
-    els.bestCents.textContent = save.bestCents;
+    els.walletVal.textContent = save.coins;
+    renderSkins();
   }
+
+  function setDesc(s) {
+    const owned = save.unlocked.includes(s.id);
+    els.skinDesc.innerHTML = owned
+      ? `<b>${s.name}</b> — ${s.kind}`
+      : `<b>${s.name}</b> — ${s.kind} · costs <b>${s.cost}¢</b>`;
+  }
+
+  function renderSkins() {
+    els.skins.innerHTML = '';
+    for (const s of SKINS) {
+      const owned = save.unlocked.includes(s.id);
+      const el = document.createElement('div');
+      el.className = 'skin' + (save.skin === s.id ? ' selected' : '') + (owned ? '' : ' locked');
+      el.style.background = `radial-gradient(circle at 38% 32%, ${s.col1}, ${s.col2})`;
+      if (!owned) {
+        const lock = document.createElement('div');
+        lock.className = 'lock';
+        lock.textContent = save.coins >= s.cost ? s.cost + '¢' : '🔒';
+        el.appendChild(lock);
+      }
+      el.addEventListener('click', () => pickSkin(s));
+      els.skins.appendChild(el);
+    }
+    const cur = skinById(save.skin);
+    setDesc(cur);
+  }
+
+  function pickSkin(s) {
+    if (save.unlocked.includes(s.id)) {
+      save.skin = s.id; feel = s; persist(); renderSkins();
+      Audio.coin(4); vibrate(6);
+    } else if (save.coins >= s.cost) {
+      save.coins -= s.cost;
+      save.unlocked.push(s.id);
+      save.skin = s.id; feel = s; persist();
+      els.walletVal.textContent = save.coins;
+      renderSkins();
+      Audio.big(); vibrate([10, 30, 10]);
+      toast('Unlocked ' + s.name + '!');
+    } else {
+      setDesc(s);
+      toast('Need ' + (s.cost - save.coins) + '¢ more');
+      vibrate(20);
+    }
+  }
+
+  function showMenu() {
+    game.state = 'menu';
+    reset();
+    els.gameover.classList.add('hidden');
+    els.menu.classList.remove('hidden');
+    els.hud.style.opacity = '0';
+    refreshMenu();
+  }
+
   refreshMenu();
 
   // ambient menu sim: a coin drifts to feel alive
