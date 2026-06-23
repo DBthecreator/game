@@ -300,11 +300,12 @@
     if (player.anchor) {
       player.anchor = null;
       Audio.release();
-      // tiny release boost so flings feel snappy
-      player.vx *= 1.02;
-      // fling off into a somersault — faster release, faster spin
+      // always launch forward & slightly up, so even a mistimed release flies
+      // on with a somersault instead of dropping straight down
+      player.vx = Math.max(player.vx + 70, 230);
+      player.vy = Math.min(player.vy, -90);
       const sp = Math.hypot(player.vx, player.vy);
-      player.spin = (player.vx >= 0 ? 1 : -1) * clamp(4 + sp / 90, 5, 16);
+      player.spin = clamp(4 + sp / 90, 5, 16);
       player.flipAccum = 0;
     }
   }
@@ -366,7 +367,7 @@
   }
 
   // ---------------------------------------------------------------- physics
-  const GRAV = 1750;                 // px/s^2
+  const GRAV = 1450;                 // px/s^2
 
   function step(dt) {
     game.t += dt;
@@ -381,19 +382,23 @@
     player.vy += GRAV * dt;
 
     if (player.anchor) {
-      // a gentle pump: holding while swinging adds a touch of energy at the
-      // bottom of the arc, so skilled timing builds speed
+      // pump the swing for amplitude, plus a gentle forward drive so simply
+      // holding always makes you progress along the line
       const a = player.anchor;
       const ang = Math.atan2(player.y - a.y, player.x - a.x);
       const tang = ang + Math.PI / 2;
       if (pressing) {
         const swingDir = Math.sign(player.vx) || 1;
-        player.vx += Math.cos(tang) * swingDir * 220 * dt;
-        player.vy += Math.sin(tang) * swingDir * 220 * dt;
+        player.vx += Math.cos(tang) * swingDir * 240 * dt;
+        player.vy += Math.sin(tang) * swingDir * 240 * dt;
+        player.vx += 120 * dt;
       }
     } else {
-      // free flight keeps a little forward assist so runs flow rightward
-      player.vx += (game.speed - player.vx) * 0.4 * dt;
+      // free flight: hold a forward cruise so momentum never collapses into a
+      // vertical drop — you always sail on toward the next anchor
+      const cruise = 240 + difficulty * 22;
+      if (player.vx < cruise) player.vx += (cruise - player.vx) * 1.4 * dt;
+      if (player.vx < 130) player.vx = 130;
     }
 
     player.x += player.vx * dt;
