@@ -285,7 +285,9 @@
     const a = findAnchor();
     if (!a) return;
     player.anchor = a;
-    player.ropeLen = Math.hypot(a.x - player.x, a.y - player.y);
+    // cap the rope so it never grows unbounded across swings (which made
+    // the player sink lower and lower); a too-long grab gently pulls up
+    player.ropeLen = Math.min(Math.hypot(a.x - player.x, a.y - player.y), H * 0.5);
     a.pulse = 1;
     player.grounded = false;
     player.spin = 0;
@@ -392,6 +394,9 @@
         player.vx += Math.cos(tang) * swingDir * 240 * dt;
         player.vy += Math.sin(tang) * swingDir * 240 * dt;
         player.vx += 120 * dt;
+        // reel the rope in while holding → climb back up and accelerate,
+        // so successive swings don't sink you into the water
+        player.ropeLen = Math.max(80, player.ropeLen - 300 * dt);
       }
     } else {
       // free flight: hold a forward cruise so momentum never collapses into a
