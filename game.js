@@ -125,9 +125,13 @@
     t: 0,
     speed: 0,                       // base forward scroll assist (world units/sec)
     camX: 0,
+    camY: 0,                        // vertical pan (only when flying high)
     shake: 0,
     flash: 0,
   };
+
+  let aimAnchor = null;             // the anchor a hold would grab right now
+  let milestone = 200;             // next distance milestone toast (m)
 
   const player = {
     x: 0, y: 0, vx: 0, vy: 0, r: 13,
@@ -173,9 +177,13 @@
     game.t = 0;
     game.speed = 70;
     game.camX = 0;
+    game.camY = 0;
     game.shake = 0;
     game.flash = 0;
     difficulty = 0;
+    aimAnchor = null;
+    milestone = 200;
+    player._skim = false;
 
     anchors = []; cents = []; drones = []; platforms = []; particles = []; floaters = [];
     genX = 0; lastPlatformEnd = 0; nextAnchorX = 0;
@@ -292,6 +300,15 @@
     player.grounded = false;
     player.spin = 0;
     player.flipAccum = 0;
+
+    // redirect momentum along the swing arc (forward) so a grab KEEPS your
+    // speed instead of bleeding it when you fly straight at the anchor
+    const dx = player.x - a.x, dy = player.y - a.y;
+    const len = Math.hypot(dx, dy) || 1;
+    let tx = -dy / len, ty = dx / len;      // tangent to the rope
+    if (tx < 0) { tx = -tx; ty = -ty; }     // bias forward (+x)
+    const sp = Math.max(Math.hypot(player.vx, player.vy), 240);
+    player.vx = tx * sp; player.vy = ty * sp;
     chainSwings++;
     Audio.grab();
     vibrate(8);
@@ -398,6 +415,9 @@
         // so successive swings don't sink you into the water
         player.ropeLen = Math.max(80, player.ropeLen - 300 * dt);
       }
+      // soft cap so momentum-preserving grabs can't snowball out of control
+      const s = Math.hypot(player.vx, player.vy);
+      if (s > 1000) { player.vx *= 1000 / s; player.vy *= 1000 / s; }
     } else {
       // free flight: hold a forward cruise so momentum never collapses into a
       // vertical drop — you always sail on toward the next anchor
@@ -448,8 +468,17 @@
     game.camX = lerp(game.camX, Math.max(targetCam, game.camX), 1 - Math.pow(0.001, dt));
     if (targetCam > game.camX) game.camX = targetCam; // never scroll backward
 
-    // distance score
+    // vertical camera: stays put normally (water at the bottom), but pans up
+    // to keep the player in frame on big upward flings
+    const targetCamY = Math.min(0, player.y - H * 0.32);
+    game.camY = lerp(game.camY, targetCamY, 1 - Math.pow(0.0008, dt));
+
+    // which anchor a hold would grab — shown as an aim highlight
+    aimAnchor = player.anchor ? null : findAnchor();
+
+    // distance score + milestone toasts
     distanceM = Math.max(distanceM, Math.floor(player.x / PX_PER_M));
+    if (distanceM >= milestone) { toast(milestone + ' m!'); milestone += 200; }
 
     // generate / cull
     while (genX < game.camX + W * 1.6) generateChunk();
@@ -484,6 +513,18 @@
 
     // water below — touch it and the run ends (no ground to roll on)
     const waterY = groundY();
+    const distWater = waterY - (player.y + player.r);
+
+    // skim it low and pull away → risky "CLOSE!" bonus
+    if (!player.anchor && distWater < 52 && player.vy > 0) player._skim = true;
+    if (player._skim && (player.vy < 0 || player.anchor) && distWater > 80) {
+      player._skim = false;
+      const b = 3 * (1 + Math.floor(chainSwings / 2));
+      centsEarned += b;
+      floatText(player.x, player.y - 18, 'CLOSE! +' + b + '¢', '#ff9d3f');
+      Audio.coin(7); vibrate(6); updateHud();
+    }
+
     if (player.y + player.r >= waterY) {
       player.y = waterY;
       burst(player.x, waterY, '#8af4ff', 16);
@@ -556,7 +597,7 @@
     drawSky();
     drawStars();
     drawSkyline();
-    ctx.translate(-game.camX, 0);
+    ctx.translate(-game.camX, -game.camY);
 
     drawGround();
     drawCents();
@@ -675,6 +716,16 @@
       ctx.beginPath(); ctx.arc(a.x, a.y, 6, 0, 7); ctx.stroke();
       ctx.fillStyle = '#0d1020';
       ctx.beginPath(); ctx.arc(a.x, a.y, 3, 0, 7); ctx.fill();
+
+      // highlight the anchor a hold would grab next, so you can aim
+      if (a === aimAnchor) {
+        const p = 0.5 + 0.5 * Math.sin(game.t * 8);
+        ctx.strokeStyle = '#ffd23f';
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = 0.5 + p * 0.5;
+        ctx.beginPath(); ctx.arc(a.x, a.y, 13 + p * 4, 0, 7); ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
       ctx.restore();
     }
   }
@@ -723,6 +774,19 @@
   }
 
   function drawRope() {
+    // faint aiming line to the anchor a hold would catch
+    if (!player.anchor && aimAnchor) {
+      ctx.save();
+      ctx.strokeStyle = 'rgba(255,210,63,0.35)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([4, 6]);
+      ctx.beginPath();
+      ctx.moveTo(player.x, player.y);
+      ctx.lineTo(aimAnchor.x, aimAnchor.y);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
     if (!player.anchor) return;
     const a = player.anchor;
     ctx.save();
